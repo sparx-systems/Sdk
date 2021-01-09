@@ -1,0 +1,64 @@
+name: Sdk
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: false
+  #  GITHUB_FEED: https://nuget.pkg.github.com/sparx-systems/index.json
+  #  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  NUGET_FEED: https://api.nuget.org/v3/index.json
+  NUGET_KEY: ${{ secrets.NUGET_KEY }}
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Setup .NET Core
+        uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: 5.0.100
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build -c Release --no-restore
+
+      - name: Test
+        run: dotnet test -c Release
+
+      - name: Pack
+        if: matrix.os == 'ubuntu-latest'
+        run: dotnet pack -c Release --no-restore src/Sdk.csproj
+
+      - name: Upload Artifact
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v2
+        with:
+          name: nupkg
+          path: ./src/bin/Release/*.nupkg
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v1
+        with:
+          name: nupkg
+
+      - name: Push to GitHub Feed
+        run: |
+          dotnet nuget push ./nupkg/*.nupkg --source $NUGET_FEED --skip-duplicate --api-key $NUGET_KEY
+#          dotnet nuget push ./nupkg/*.nupkg --no-symbols --skip-duplicate -s $GITHUB_FEED --api-key $GITHUB_TOKEN
